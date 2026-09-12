@@ -7,6 +7,9 @@ require_once __DIR__ . '/includes/instagram.php';
 
 $igPosts  = hh_instagram_posts($HH_INSTAGRAM_CFG);
 $igIsLive = ($igPosts[0]['type'] ?? 'FALLBACK') !== 'FALLBACK';
+if ($igIsLive) {
+    hh_ig_prune_images($igPosts);
+}
 
 $pageTitle = HH_BRAND . ' by ' . HH_DOCTOR . ' — Homeopathy Clinic in Abids, Hyderabad';
 $pageDesc  = 'Dr. Atiya Fatima (BHMS, DHA-licensed) — 20+ years of homeopathic practice, 5,000+ patients across 20+ countries. Treatment for ADHD, depression, infertility, thyroid, skin, allergy and pain. Clinic at MPM Mall, Abids, Hyderabad. Book online or call ' . HH_PHONE_PRETTY . '.';
@@ -333,7 +336,7 @@ $navLinks = [
     <div class="ig-head">
       <div class="section-head" style="margin-bottom:0;">
         <span class="eyebrow">From the clinic</span>
-        <h2>Latest on Instagram</h2>
+        <h2>Latest <?= $igIsLive && $HH_INSTAGRAM_CFG['reels_only'] ? 'reels' : 'on Instagram' ?></h2>
         <p class="lede">Case notes, patient questions answered, and clinic updates from Dr. Atiya.</p>
       </div>
       <a class="ig-handle" href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">
@@ -348,7 +351,9 @@ $navLinks = [
           <div class="ig-card__media">
             <?php if ($post['image'] !== ''): ?>
               <img src="<?= e($post['image']) ?>" alt="<?= e(mb_substr($post['caption'], 0, 90)) ?>" loading="lazy">
-              <?php if ($post['type'] === 'VIDEO'): ?>
+              <?php if ($post['type'] === 'REEL'): ?>
+                <span class="ig-card__type ig-card__type--reel"><?= hh_icon('play', 13) ?> Reel</span>
+              <?php elseif ($post['type'] === 'VIDEO'): ?>
                 <span class="ig-card__type"><?= hh_icon('play', 14) ?></span>
               <?php elseif ($post['type'] === 'CAROUSEL_ALBUM'): ?>
                 <span class="ig-card__type"><?= hh_icon('layers', 14) ?></span>
@@ -377,7 +382,8 @@ $navLinks = [
 
     <?php if (!$igIsLive): ?>
       <p class="ig-note">
-        Showing highlights — connect an Instagram access token to pull posts automatically.
+        Showing placeholder tiles — <a href="setup-instagram.php">connect the Instagram account</a>
+        to pull real reels automatically.
         <a href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">See the live feed &rarr;</a>
       </p>
     <?php endif; ?>

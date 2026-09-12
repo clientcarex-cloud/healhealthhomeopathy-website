@@ -84,30 +84,81 @@ PHPMailer writes the full SMTP conversation there. Set it back to `'0'` afterwar
 
 ---
 
-## 4. Configure the Instagram feed (optional)
+## 4. Connect Instagram (for real reels)
 
-Out of the box the Instagram section shows six **curated tiles** that link to
-the profile — it looks intentional and never appears broken. To pull real posts:
+**Instagram publishes nothing without authentication.** The public profile page
+is a JavaScript shell with no post data in it, and `i.instagram.com` answers
+`require_login`. Scraping is not an option — the account has to be connected
+once through Instagram's own OAuth. After that it runs itself.
 
-1. Create a Meta app and connect the Instagram account
-   `dr.atiya.healhealthhomeopathy` via **Instagram Basic Display** /
-   **Instagram Graph API**.
-2. Generate a **long-lived access token** (valid 60 days, refreshable).
-3. Put it in `config.local.php`:
-   ```php
-   'HH_IG_TOKEN' => 'IGQVJ...',
-   ```
+The site ships a guided page that does the whole exchange for you:
 
-Posts are then fetched live and cached for 1 hour in
-`storage/cache/instagram.json`. If the API is unreachable the site serves the
-stale cache, then the curated tiles — so the section degrades gracefully.
+### Step 1 — make the account Professional
 
-Long-lived tokens expire after 60 days. Either refresh it on a schedule or plan
-to paste a new one every couple of months.
+In the Instagram app: **Settings → Account type and tools → Switch to
+professional account**. Creator is fine. Personal accounts cannot use this API.
 
-To edit the curated tiles, change `HH_IG_FALLBACK` in `includes/instagram.php`.
+### Step 2 — set a setup password
 
----
+In `includes/config.local.php`:
+
+```php
+'HH_IG_SETUP_KEY' => 'pick-something-long',
+```
+
+### Step 3 — create a free Meta app
+
+1. Go to <https://developers.facebook.com/apps> → **Create app**
+2. Use case: **Other** → type: **Business**
+3. Add the **Instagram** product → **API setup with Instagram login**
+4. Under **Business login settings**, add this exact redirect URI:
+   `https://yourdomain.com/setup-instagram.php`
+5. Copy the **Instagram App ID** and **App Secret** into `includes/config.local.php`:
+
+```php
+'HH_IG_APP_ID'     => '...',
+'HH_IG_APP_SECRET' => '...',
+```
+
+### Step 4 — click Connect
+
+Open `https://yourdomain.com/setup-instagram.php`, enter your setup password,
+and press **Connect Instagram**. That page then shows connection status, days
+until expiry, a thumbnail preview of what the site is showing, and buttons to
+fetch now, refresh the token or disconnect.
+
+> The redirect URI must match **byte for byte**, and Instagram requires
+> **HTTPS** — this will not work over plain `http://` on a real domain.
+
+### What happens after connecting
+
+- Posts are fetched from `graph.instagram.com/me/media` and cached for an hour
+- **Thumbnails are mirrored into `assets/img/ig/`** — Instagram's CDN URLs are
+  signed and expire after a few days, so hotlinking them means broken images later
+- **The 60-day token refreshes itself** once it is within 10 days of expiring,
+  as long as the site gets traffic. Nothing to renew by hand.
+- If the API is ever unreachable, the site serves the last good cache, and only
+  falls back to placeholder tiles if it has never successfully fetched
+
+### Reels settings
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `HH_IG_REELS_ONLY`  | `0` | `1` shows reels only and hides photo posts |
+| `HH_IG_REELS_FIRST` | `1` | reels at the front, then photos |
+| `HH_IG_LIMIT`       | `6` | number of tiles in the grid |
+| `HH_IG_CACHE_TTL`   | `3600` | seconds between API calls |
+
+### If the account is left idle
+
+A long-lived token expires 60 days after its last refresh. The auto-refresh
+keeps it alive on any site with normal traffic. If the site sits idle for two
+months, just open `setup-instagram.php` and press **Connect Instagram** again.
+
+### Editing the placeholder tiles
+
+They only appear before the account is connected. Change them in
+`HH_IG_FALLBACK` at the top of `includes/instagram.php`.
 
 ## 5. Add real photos
 
@@ -173,19 +224,22 @@ Two emails go out per booking:
 
 ```
 index.php                  Single-page site
+setup-instagram.php        Guided Instagram connection (password-gated)
 api/book.php               Booking endpoint (JSON)
 includes/
   config.php               All site content & settings
   config.local.php         Your secrets (git-ignored, you create this)
   config.local.sample.php  Template for the above
   mailer.php               PHPMailer wiring + email templates
-  instagram.php            Instagram Graph API + cache + fallback
+  instagram.php            Instagram OAuth, media fetch, thumbnail mirror
   icons.php                Inline SVG icon set
 assets/css/style.css       Styles
 assets/js/main.js          Nav, scroll reveal, form handling
 vendor/PHPMailer/          Bundled PHPMailer 6.9.3
 storage/bookings/          Booking log (JSONL)
 storage/cache/             Instagram cache + rate-limit counters
+storage/instagram_token.json   Long-lived token (chmod 600, git-ignored)
+assets/img/ig/             Mirrored Instagram thumbnails
 ```
 
 ---
@@ -200,3 +254,5 @@ storage/cache/             Instagram cache + rate-limit counters
 - [ ] HTTPS enabled
 - [ ] `canonical` URL in `index.php` updated to the real domain
 - [ ] Clinic hours and time slots match actual practice hours
+- [ ] Instagram connected at `/setup-instagram.php` and showing real reels
+- [ ] `HH_IG_SETUP_KEY` is a strong password (that page can reconnect the account)

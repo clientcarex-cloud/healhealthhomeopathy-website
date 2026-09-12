@@ -1,6 +1,9 @@
 includes/config.local.php
 storage/cache/*
 storage/bookings/*
+storage/instagram_token.json
+assets/img/ig/*
 !storage/cache/.gitkeep
 !storage/bookings/.gitkeep
+!assets/img/ig/.gitkeep
 .DS_Store

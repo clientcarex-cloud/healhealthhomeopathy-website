@@ -28,6 +28,23 @@ return [
     'HH_PATIENT_COPY' => '1',
 
     // ---- Instagram --------------------------------------------------------
-    // Long-lived access token. Leave blank to use the curated fallback tiles.
+    // Instagram gives no public access to posts, so the account must be
+    // connected once via OAuth. Create a Meta app (Instagram API with
+    // Instagram Login), then open /setup-instagram.php and click Connect.
+    // Full walkthrough in README section 4.
+    'HH_IG_APP_ID'     => '',
+    'HH_IG_APP_SECRET' => '',
+
+    // Pick your own password — /setup-instagram.php will ask for it.
+    // Leave blank and that page refuses to run at all.
+    'HH_IG_SETUP_KEY'  => '',
+
+    // Reels behaviour
+    'HH_IG_REELS_ONLY'  => '0',  // '1' = show reels only, hide photo posts
+    'HH_IG_REELS_FIRST' => '1',  // '1' = reels at the front, then photos
+    'HH_IG_LIMIT'       => '6',  // tiles in the grid
+    'HH_IG_CACHE_TTL'   => '3600',
+
+    // Alternative to the setup page: paste a long-lived token here.
     'HH_IG_TOKEN' => '',
 ];

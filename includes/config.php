@@ -181,11 +181,25 @@ $HH_MAIL = [
 // Instagram feed
 // ---------------------------------------------------------------------------
 $HH_INSTAGRAM_CFG = [
-    // Long-lived token from Instagram Basic Display / Graph API.
-    // Empty token => the site shows the curated fallback tiles below.
+    // Meta app credentials — needed once, to connect the account via
+    // /setup-instagram.php. After that the token lives in storage/ and
+    // refreshes itself.
+    'app_id'       => hh_setting('HH_IG_APP_ID', ''),
+    'app_secret'   => hh_setting('HH_IG_APP_SECRET', ''),
+
+    // Password for /setup-instagram.php. Blank => the page refuses to run.
+    'setup_key'    => hh_setting('HH_IG_SETUP_KEY', ''),
+
+    // Optional: paste a long-lived token directly instead of using OAuth.
+    // A token connected through the setup page takes precedence over this.
     'access_token' => hh_setting('HH_IG_TOKEN', ''),
-    'limit'        => 6,
-    'cache_ttl'    => 3600, // seconds
+
+    // Reels handling.
+    'reels_only'   => hh_setting('HH_IG_REELS_ONLY', '0') === '1',
+    'reels_first'  => hh_setting('HH_IG_REELS_FIRST', '1') === '1',
+
+    'limit'        => (int) hh_setting('HH_IG_LIMIT', '6'),
+    'cache_ttl'    => (int) hh_setting('HH_IG_CACHE_TTL', '3600'), // seconds
     'cache_file'   => dirname(__DIR__) . '/storage/cache/instagram.json',
 ];
 
