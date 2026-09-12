@@ -1,9 +1,13 @@
 <?php
 /**
- * Guided Instagram connection.
+ * Instagram diagnostics + optional OAuth fallback.
  *
- * Protected by HH_IG_SETUP_KEY in includes/config.local.php. Delete or
- * rename this file once the account is connected if you prefer.
+ * The site does NOT need this page: reels are fetched from Instagram's public
+ * profile endpoint with no credentials. Use this page to
+ *   - check whether this server can reach that endpoint, and
+ *   - connect the account through OAuth if the server's IP is ever blocked.
+ *
+ * Protected by HH_IG_SETUP_KEY in includes/config.local.php.
  */
 
 declare(strict_types=1);
@@ -25,6 +29,7 @@ $host        = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
 $redirectUri = $scheme . '://' . $host . strtok((string) $_SERVER['REQUEST_URI'], '?');
 
 $notice = null;   // ['kind' => 'ok'|'error'|'info', 'title' => ..., 'text' => ...]
+$probe  = null;   // ['ok' => bool, 'text' => ...]
 
 // ---------------------------------------------------------------------------
 // Gate
@@ -96,13 +101,52 @@ if ($authed) {
     // Force a fetch.
     if (($_POST['action'] ?? '') === 'fetch') {
         @unlink($cfg['cache_file']);
-        $posts = hh_instagram_posts($cfg);
-        if (($posts[0]['type'] ?? 'FALLBACK') === 'FALLBACK') {
+        $feed = hh_instagram_feed($cfg);
+        if ($feed['source'] === 'fallback') {
             $notice = ['kind' => 'error', 'title' => 'Still showing placeholders',
-                       'text'  => 'Instagram returned no media. Check your PHP error log for the exact API message.'];
+                       'text'  => 'Instagram returned no media. Run the connection test below for the exact reason.'];
         } else {
-            hh_ig_prune_images($posts);
-            $notice = ['kind' => 'ok', 'title' => 'Fetched ' . count($posts) . ' posts', 'text' => 'Thumbnails mirrored locally. Reload the homepage to see them.'];
+            $reels = count(array_filter($feed['items'], static fn($i) => $i['type'] === 'REEL'));
+            $notice = ['kind' => 'ok',
+                       'title' => 'Fetched ' . count($feed['items']) . ' posts (' . $reels . ' reels)',
+                       'text'  => 'Thumbnails mirrored locally. Reload the homepage to see them.'];
+        }
+    }
+
+    // Can this server reach Instagram's public endpoint at all?
+    if (($_POST['action'] ?? '') === 'probe') {
+        $t0 = microtime(true);
+        $ch = curl_init(HH_IG_PROFILE_API . rawurlencode(HH_IG_HANDLE));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+            CURLOPT_HTTPHEADER     => ['x-ig-app-id: ' . HH_IG_WEB_APP_ID, 'Accept: */*', 'Accept-Language: en-US,en;q=0.9'],
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $ms = (int) round((microtime(true) - $t0) * 1000);
+
+        $user = is_string($body) ? (json_decode($body, true)['data']['user'] ?? null) : null;
+
+        if ($code === 200 && is_array($user)) {
+            $total = (int) ($user['edge_owner_to_timeline_media']['count'] ?? 0);
+            $vids  = count(array_filter(
+                (array) ($user['edge_owner_to_timeline_media']['edges'] ?? []),
+                static fn($e) => !empty($e['node']['is_video'])
+            ));
+            $probe = ['ok' => true, 'text' => sprintf(
+                'HTTP 200 in %dms — %s followers, %d posts, %d reels in the latest batch.',
+                $ms, number_format((int) ($user['edge_followed_by']['count'] ?? 0)), $total, $vids
+            )];
+        } else {
+            $msg = is_string($body) ? (json_decode($body, true)['message'] ?? '') : '';
+            $probe = ['ok' => false, 'text' => sprintf(
+                'HTTP %d in %dms%s — this server cannot read the public endpoint. %s',
+                $code, $ms, $msg !== '' ? ' (“' . $msg . '”)' : '',
+                'Connect via OAuth below, or ask your host about the outbound IP.'
+            )];
         }
     }
 
@@ -124,7 +168,8 @@ $expired   = $connected && $daysLeft <= 0;
 
 $cached = [];
 if ($authed && is_file($cfg['cache_file'])) {
-    $cached = json_decode((string) file_get_contents($cfg['cache_file']), true) ?: [];
+    $raw    = json_decode((string) file_get_contents($cfg['cache_file']), true);
+    $cached = is_array($raw) ? ($raw['data']['items'] ?? []) : [];
 }
 $liveCached = $cached !== [] && ($cached[0]['type'] ?? 'FALLBACK') !== 'FALLBACK';
 
@@ -183,8 +228,11 @@ if ($authed && $appId !== '' && $appSecret !== '') {
 <body>
 <div class="setup">
 
-  <h1>Connect Instagram</h1>
-  <p class="lede">Links <strong>@<?= e(HH_IG_HANDLE) ?></strong> so the website can show real reels and posts.</p>
+  <h1>Instagram</h1>
+  <p class="lede">
+    The site pulls reels from <strong>@<?= e(HH_IG_HANDLE) ?></strong> automatically, with no login.
+    Use this page to check that it is working, or to connect via OAuth if this server gets blocked.
+  </p>
 
   <?php if ($notice !== null): ?>
     <div class="form-alert is-visible form-alert--<?= $notice['kind'] === 'ok' ? 'ok' : ($notice['kind'] === 'info' ? 'ok' : 'error') ?>">
@@ -217,9 +265,51 @@ if ($authed && $appId !== '' && $appSecret !== '') {
 
   <?php else: ?>
 
-    <!-- Status -->
+    <!-- Connection test — the thing that actually matters -->
     <div class="panel">
-      <h2>Status</h2>
+      <h2>Connection test</h2>
+      <p>Checks whether this server can read the public profile endpoint. That is the path the
+         site uses by default, and it needs no credentials at all.</p>
+
+      <?php if ($probe !== null): ?>
+        <div class="status" style="margin-top:16px;">
+          <span class="dot <?= $probe['ok'] ? 'dot--on' : 'dot--bad' ?>"></span>
+          <?= $probe['ok'] ? 'Instagram is reachable' : 'Instagram is not reachable' ?>
+        </div>
+        <p style="margin-top:-6px;"><?= e($probe['text']) ?></p>
+      <?php endif; ?>
+
+      <div class="btn-row">
+        <form class="inline-form" method="post"><input type="hidden" name="action" value="probe">
+          <button class="btn btn--primary" type="submit">Test connection</button></form>
+        <form class="inline-form" method="post"><input type="hidden" name="action" value="fetch">
+          <button class="btn btn--ghost" type="submit">Fetch reels now</button></form>
+      </div>
+
+      <?php if ($liveCached): ?>
+        <h3>Currently on the website</h3>
+        <div class="thumbs">
+          <?php foreach ($cached as $post): ?>
+            <figure>
+              <?php if (($post['image'] ?? '') !== ''): ?>
+                <img src="<?= e($post['image']) ?>" alt="" loading="lazy">
+              <?php endif; ?>
+              <figcaption>
+                <?= $post['type'] === 'REEL' ? 'Reel' : 'Post' ?>
+                <?= ($post['views'] ?? 0) > 0 ? ' · ' . e(hh_ig_short_num((int) $post['views'])) . ' plays' : '' ?>
+              </figcaption>
+            </figure>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </div>
+
+    <!-- OAuth fallback -->
+    <div class="panel">
+      <h2>OAuth fallback <span style="font-weight:400;color:var(--ink-400);font-size:14px;">— optional</span></h2>
+      <p>Only needed if the test above fails. Connecting the account through Instagram's official
+         API gives a token the site will use instead.</p>
+
       <?php if ($connected && !$expired): ?>
         <div class="status"><span class="dot dot--on"></span> Connected<?= $token['username'] !== '' ? ' as @' . e($token['username']) : '' ?></div>
         <p>The token renews itself automatically while the site gets traffic.</p>
@@ -227,7 +317,7 @@ if ($authed && $appId !== '' && $appSecret !== '') {
         <div class="status"><span class="dot dot--bad"></span> Token expired</div>
         <p>Reconnect the account below — an expired token cannot be refreshed.</p>
       <?php else: ?>
-        <div class="status"><span class="dot dot--off"></span> Not connected — the site is showing placeholder tiles</div>
+        <div class="status"><span class="dot dot--off"></span> Not connected — not needed while the test above passes</div>
       <?php endif; ?>
 
       <?php if ($connected): ?>
@@ -246,8 +336,6 @@ if ($authed && $appId !== '' && $appSecret !== '') {
           </a>
         <?php endif; ?>
         <?php if ($connected): ?>
-          <form class="inline-form" method="post"><input type="hidden" name="action" value="fetch">
-            <button class="btn btn--ghost" type="submit">Fetch now</button></form>
           <form class="inline-form" method="post"><input type="hidden" name="action" value="refresh">
             <button class="btn btn--ghost" type="submit">Refresh token</button></form>
           <form class="inline-form" method="post" onsubmit="return confirm('Delete the stored Instagram token?');">
@@ -255,20 +343,6 @@ if ($authed && $appId !== '' && $appSecret !== '') {
             <button class="btn btn--ghost" type="submit">Disconnect</button></form>
         <?php endif; ?>
       </div>
-
-      <?php if ($liveCached): ?>
-        <h3>Currently showing</h3>
-        <div class="thumbs">
-          <?php foreach ($cached as $post): ?>
-            <figure>
-              <?php if ($post['image'] !== ''): ?>
-                <img src="<?= e($post['image']) ?>" alt="" loading="lazy">
-              <?php endif; ?>
-              <figcaption><?= e($post['type']) ?><?= $post['timestamp'] ? ' · ' . e(hh_instagram_when($post['timestamp'])) : '' ?></figcaption>
-            </figure>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
     </div>
 
     <!-- Meta app setup -->

@@ -84,80 +84,87 @@ PHPMailer writes the full SMTP conversation there. Set it back to `'0'` afterwar
 
 ---
 
-## 4. Connect Instagram (for real reels)
+## 4. Instagram reels — no setup required
 
-**Instagram publishes nothing without authentication.** The public profile page
-is a JavaScript shell with no post data in it, and `i.instagram.com` answers
-`require_login`. Scraping is not an option — the account has to be connected
-once through Instagram's own OAuth. After that it runs itself.
+Reels appear on the site **automatically, with no token, no Meta app and no
+OAuth.** The site calls Instagram's own public profile endpoint:
 
-The site ships a guided page that does the whole exchange for you:
-
-### Step 1 — make the account Professional
-
-In the Instagram app: **Settings → Account type and tools → Switch to
-professional account**. Creator is fine. Personal accounts cannot use this API.
-
-### Step 2 — set a setup password
-
-In `includes/config.local.php`:
-
-```php
-'HH_IG_SETUP_KEY' => 'pick-something-long',
+```
+GET https://www.instagram.com/api/v1/users/web_profile_info/?username=<handle>
+Header: x-ig-app-id: 936619743392459
 ```
 
-### Step 3 — create a free Meta app
+This is the same approach used in production on the Stallion Horse Riding site.
+It returns the latest media with thumbnails, play counts, like counts, captions
+and the follower count. Nothing to configure — just deploy.
 
-1. Go to <https://developers.facebook.com/apps> → **Create app**
-2. Use case: **Other** → type: **Business**
-3. Add the **Instagram** product → **API setup with Instagram login**
-4. Under **Business login settings**, add this exact redirect URI:
-   `https://yourdomain.com/setup-instagram.php`
-5. Copy the **Instagram App ID** and **App Secret** into `includes/config.local.php`:
+### What the site does with it
 
-```php
-'HH_IG_APP_ID'     => '...',
-'HH_IG_APP_SECRET' => '...',
-```
+- **Reels first.** Video posts are detected via `is_video` and shown ahead of
+  photo posts (or exclusively, with `HH_IG_REELS_ONLY`).
+- **Thumbnails are mirrored** into `assets/img/ig/<shortcode>.jpg`. fbcdn URLs
+  are signed, short-lived and refuse browser hotlinks, so serving them from our
+  own domain is what keeps the grid from breaking a few days later. Files are
+  validated as real images before being written, and pruned when a post leaves
+  the feed.
+- **Captions are cleaned** — hashtags and `@mentions` stripped, trimmed to 150
+  characters, so the tiles read properly on a clinical site.
+- **Cached for an hour** (`HH_IG_CACHE_TTL`). If Instagram is unreachable the
+  last good copy keeps serving and the next retry is 15 minutes out, rather than
+  hammering the endpoint on every page view.
 
-### Step 4 — click Connect
-
-Open `https://yourdomain.com/setup-instagram.php`, enter your setup password,
-and press **Connect Instagram**. That page then shows connection status, days
-until expiry, a thumbnail preview of what the site is showing, and buttons to
-fetch now, refresh the token or disconnect.
-
-> The redirect URI must match **byte for byte**, and Instagram requires
-> **HTTPS** — this will not work over plain `http://` on a real domain.
-
-### What happens after connecting
-
-- Posts are fetched from `graph.instagram.com/me/media` and cached for an hour
-- **Thumbnails are mirrored into `assets/img/ig/`** — Instagram's CDN URLs are
-  signed and expire after a few days, so hotlinking them means broken images later
-- **The 60-day token refreshes itself** once it is within 10 days of expiring,
-  as long as the site gets traffic. Nothing to renew by hand.
-- If the API is ever unreachable, the site serves the last good cache, and only
-  falls back to placeholder tiles if it has never successfully fetched
-
-### Reels settings
+### Settings
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `HH_IG_REELS_ONLY`  | `0` | `1` shows reels only and hides photo posts |
 | `HH_IG_REELS_FIRST` | `1` | reels at the front, then photos |
-| `HH_IG_LIMIT`       | `6` | number of tiles in the grid |
+| `HH_IG_LIMIT`       | `8` | number of tiles in the grid |
 | `HH_IG_CACHE_TTL`   | `3600` | seconds between API calls |
 
-### If the account is left idle
+All optional — the defaults work as-is.
 
-A long-lived token expires 60 days after its last refresh. The auto-refresh
-keeps it alive on any site with normal traffic. If the site sits idle for two
-months, just open `setup-instagram.php` and press **Connect Instagram** again.
+### The one caveat
 
-### Editing the placeholder tiles
+This endpoint is unofficial. Instagram rate-limits it per IP, and some networks
+are blocked outright — a blocked server gets `HTTP 401 "Please wait a few
+minutes before you try again"`. It works from the Stallion server; whether it
+works from this site's host can only be settled by testing from that host.
 
-They only appear before the account is connected. Change them in
+**To check:** set a password in `includes/config.local.php`
+
+```php
+'HH_IG_SETUP_KEY' => 'pick-something-long',
+```
+
+then open `https://yourdomain.com/setup-instagram.php` and press
+**Test connection**. It reports the exact HTTP status, Instagram's own error
+message if any, the follower count and how many reels came back.
+
+### If the server is blocked — OAuth fallback
+
+Only needed if the test fails. The same page can connect the account through
+Instagram's official API, which is unaffected by IP blocking:
+
+1. Make the account **Professional** (Instagram app → Settings → Account type
+   and tools). Personal accounts cannot use the official API.
+2. Create a free app at <https://developers.facebook.com/apps> → **Create app**
+   → use case **Other** → type **Business**.
+3. Add the **Instagram** product → **API setup with Instagram login**.
+4. Under **Business login settings**, add this exact redirect URI:
+   `https://yourdomain.com/setup-instagram.php`
+5. Put the **Instagram App ID** and **App Secret** in `includes/config.local.php`.
+6. Reload the setup page and press **Connect Instagram**.
+
+The redirect URI must match byte for byte, and Instagram requires HTTPS. The
+resulting 60-day token then refreshes itself while the site gets traffic.
+
+> Note: the official API does not expose play counts without the Insights
+> permission, so reels connected this way show likes but not plays.
+
+### Placeholder tiles
+
+Shown only if Instagram has never been reached successfully. Edit them in
 `HH_IG_FALLBACK` at the top of `includes/instagram.php`.
 
 ## 5. Add real photos
@@ -224,14 +231,14 @@ Two emails go out per booking:
 
 ```
 index.php                  Single-page site
-setup-instagram.php        Guided Instagram connection (password-gated)
+setup-instagram.php        Instagram diagnostics + optional OAuth (password-gated)
 api/book.php               Booking endpoint (JSON)
 includes/
   config.php               All site content & settings
   config.local.php         Your secrets (git-ignored, you create this)
   config.local.sample.php  Template for the above
   mailer.php               PHPMailer wiring + email templates
-  instagram.php            Instagram OAuth, media fetch, thumbnail mirror
+  instagram.php            Public feed fetch, reels, thumbnail mirror, OAuth fallback
   icons.php                Inline SVG icon set
 assets/css/style.css       Styles
 assets/js/main.js          Nav, scroll reveal, form handling
@@ -254,5 +261,6 @@ assets/img/ig/             Mirrored Instagram thumbnails
 - [ ] HTTPS enabled
 - [ ] `canonical` URL in `index.php` updated to the real domain
 - [ ] Clinic hours and time slots match actual practice hours
-- [ ] Instagram connected at `/setup-instagram.php` and showing real reels
-- [ ] `HH_IG_SETUP_KEY` is a strong password (that page can reconnect the account)
+- [ ] Ran **Test connection** at `/setup-instagram.php` from the live server and
+      confirmed real reels are showing (this needs no token — see §4)
+- [ ] `HH_IG_SETUP_KEY` is a strong password, or `setup-instagram.php` deleted

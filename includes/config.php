@@ -198,7 +198,7 @@ $HH_INSTAGRAM_CFG = [
     'reels_only'   => hh_setting('HH_IG_REELS_ONLY', '0') === '1',
     'reels_first'  => hh_setting('HH_IG_REELS_FIRST', '1') === '1',
 
-    'limit'        => (int) hh_setting('HH_IG_LIMIT', '6'),
+    'limit'        => (int) hh_setting('HH_IG_LIMIT', '8'),
     'cache_ttl'    => (int) hh_setting('HH_IG_CACHE_TTL', '3600'), // seconds
     'cache_file'   => dirname(__DIR__) . '/storage/cache/instagram.json',
 ];

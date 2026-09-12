@@ -548,9 +548,9 @@ h3 { font-size: clamp(20px, 2.2vw, 24px); }
   display: grid; place-items: center; color: #fff; flex-shrink: 0;
 }
 
-.ig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-@media (max-width: 900px) { .ig-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px) { .ig-grid { grid-template-columns: 1fr; } }
+.ig-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 1000px) { .ig-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 720px)  { .ig-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; } }
 
 .ig-card {
   position: relative; display: block; overflow: hidden;
@@ -561,9 +561,35 @@ h3 { font-size: clamp(20px, 2.2vw, 24px); }
 }
 .ig-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-md); }
 
-.ig-card__media { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--green-50); }
-.ig-card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s ease; }
-.ig-card:hover .ig-card__media img { transform: scale(1.06); }
+/* Reels are shot vertically, so the tiles are 9:16 like the source material. */
+.ig-card__media { position: relative; aspect-ratio: 9 / 16; overflow: hidden; background: var(--green-800); }
+.ig-card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s ease; }
+.ig-card:hover .ig-card__media img { transform: scale(1.05); }
+
+/* Gradient so the caption and counters stay readable over any frame. */
+.ig-card__shade {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(to bottom, rgba(8,48,42,.28) 0%, transparent 28%, transparent 42%, rgba(8,48,42,.82) 88%, rgba(8,48,42,.94) 100%);
+}
+
+.ig-card__play {
+  position: absolute; z-index: 2; top: 50%; left: 50%;
+  translate: -50% -50%;
+  width: 58px; height: 58px; border-radius: 50%;
+  background: rgba(201, 138, 46, .92); color: #fff;
+  display: grid; place-items: center;
+  padding-left: 4px;                      /* optically centre the triangle */
+  box-shadow: 0 6px 20px rgba(8, 48, 42, .35);
+  transition: transform .24s ease, background .24s ease;
+}
+.ig-card:hover .ig-card__play { transform: scale(1.1); background: var(--gold-500); }
+
+.ig-card__cap {
+  position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 46px; margin: 0;
+  font-size: 13.5px; line-height: 1.5; color: #fff;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  text-shadow: 0 1px 3px rgba(8, 48, 42, .5);
+}
 
 .ig-card__art {
   width: 100%; height: 100%;
@@ -598,22 +624,24 @@ h3 { font-size: clamp(20px, 2.2vw, 24px); }
   background: rgba(14, 26, 22, .55); backdrop-filter: blur(6px);
   display: grid; place-items: center; color: #fff;
 }
-.ig-card__type--reel {
-  width: auto; height: auto; border-radius: var(--r-full);
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 12px 6px 10px;
-  font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-}
-.ig-card__body { padding: 18px 20px 20px; }
-.ig-card__body p {
-  margin: 0 0 12px; font-size: 14.5px; line-height: 1.6; color: var(--ink-700);
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
+/* Play / like counters, sitting over the foot of the frame. */
 .ig-card__meta {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 12.5px; font-weight: 600; color: var(--ink-400);
+  position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 14px;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 12.5px; font-weight: 600; color: #fff;
+  text-shadow: 0 1px 3px rgba(8, 48, 42, .5);
 }
-.ig-card__meta em { font-style: normal; color: var(--green-700); display: inline-flex; align-items: center; gap: 6px; }
+.ig-card__meta span { display: inline-flex; align-items: center; gap: 5px; }
+.ig-card__meta svg { color: var(--gold-300); }
+.ig-card__ago { margin-left: auto; color: rgba(255, 255, 255, .78); font-weight: 500; }
+
+/* Placeholder tiles keep the counters below the art instead of over it. */
+.ig-card:has(.ig-card__art) .ig-card__meta {
+  position: static; color: var(--ink-400); text-shadow: none;
+  padding: 14px 20px 16px; left: auto; right: auto; bottom: auto;
+}
+.ig-card:has(.ig-card__art) .ig-card__meta svg { color: var(--green-600); }
+.ig-card:has(.ig-card__art) .ig-card__ago { color: var(--ink-400); }
 
 .ig-note {
   margin-top: 24px; font-size: 13.5px; color: var(--ink-400); text-align: center;

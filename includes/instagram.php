@@ -1,24 +1,28 @@
 <?php
 /**
- * Instagram feed — real posts/reels via the Instagram API with Instagram Login.
+ * Instagram feed — real reels from @dr.atiya.healhealthhomeopathy.
  *
- * Instagram exposes NO public data without authentication (the profile page is
- * a JS shell and i.instagram.com returns require_login), so the account must be
- * connected once through OAuth. Run /setup-instagram.php to do that.
+ * PRIMARY path needs no token and no OAuth: Instagram's own web endpoint
+ * `web_profile_info` returns a public profile's recent media when called with
+ * the public web app id. This is what the Stallion site uses in production.
+ * It is an unofficial endpoint, so it can rate-limit a given server IP — when
+ * that happens we serve the last good cache and retry shortly, and the
+ * optional OAuth path below can take over permanently.
  *
- * Once connected this module:
- *   - fetches the latest media (reels first, or reels only)
- *   - mirrors each thumbnail locally, because Instagram CDN URLs are signed and
- *     expire after a few days — hotlinking them means broken images later
- *   - refreshes the 60-day long-lived token automatically before it expires
- *   - serves a stale cache, then curated tiles, if the API is ever unreachable
+ * FALLBACK path (optional): if the account has been connected through
+ * /setup-instagram.php, the official Graph API is used instead.
  *
- * @see https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
+ * Thumbnails are always mirrored into assets/img/ig/ because fbcdn URLs are
+ * signed, short-lived, and refuse browser hotlinks.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
+
+/** Public web app id used by instagram.com itself. */
+const HH_IG_WEB_APP_ID  = '936619743392459';
+const HH_IG_PROFILE_API = 'https://www.instagram.com/api/v1/users/web_profile_info/?username=';
 
 const HH_IG_GRAPH        = 'https://graph.instagram.com';
 const HH_IG_OAUTH_AUTH   = 'https://www.instagram.com/oauth/authorize';
@@ -269,138 +273,286 @@ function hh_ig_maybe_refresh(): void
 }
 
 // ---------------------------------------------------------------------------
-// Media
+// Feed
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch the latest posts. Always returns a list of tiles.
+ * The feed shown on the site.
+ *
+ * @return array{handle:string,followers:int,posts:int,items:array,source:string}
  */
-function hh_instagram_posts(array $cfg): array
+function hh_instagram_feed(array $cfg): array
 {
     $cacheFile = $cfg['cache_file'];
+    $handle    = HH_IG_HANDLE;
+    $ttl       = max(300, (int) $cfg['cache_ttl']);
 
     // 1. Fresh cache wins.
-    if (is_file($cacheFile) && (time() - (int) filemtime($cacheFile)) < $cfg['cache_ttl']) {
-        $cached = json_decode((string) file_get_contents($cacheFile), true);
-        if (is_array($cached) && $cached !== []) {
-            return $cached;
+    $cache = is_file($cacheFile)
+        ? json_decode((string) file_get_contents($cacheFile), true)
+        : null;
+
+    if (is_array($cache)
+        && ($cache['handle'] ?? '') === $handle
+        && (int) ($cache['v'] ?? 0) === 3
+        && (time() - (int) ($cache['ts'] ?? 0)) < $ttl) {
+        return $cache['data'] + ['source' => 'cache'];
+    }
+
+    // 2. Public endpoint — no credentials needed.
+    $data = hh_ig_fetch_public($handle, $cfg);
+
+    // 3. Official API, if the account was connected via /setup-instagram.php.
+    if ($data === null) {
+        $token = hh_ig_access_token($cfg);
+        if ($token !== '') {
+            hh_ig_maybe_refresh();
+            $data = hh_ig_fetch_graph(hh_ig_access_token($cfg), $cfg);
         }
     }
 
-    $token = hh_ig_access_token($cfg);
-
-    if ($token !== '') {
-        hh_ig_maybe_refresh();
-        $token = hh_ig_access_token($cfg);   // may have just been rotated
-
-        $live = hh_instagram_fetch_live($token, $cfg);
-        if ($live !== []) {
-            $dir = dirname($cacheFile);
-            if (!is_dir($dir)) {
-                @mkdir($dir, 0775, true);
-            }
-            @file_put_contents($cacheFile, json_encode($live, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
-
-            return $live;
-        }
-
-        // API failed — a stale cache beats nothing.
-        if (is_file($cacheFile)) {
-            $stale = json_decode((string) file_get_contents($cacheFile), true);
-            if (is_array($stale) && $stale !== []) {
-                return $stale;
-            }
-        }
+    if ($data !== null) {
+        hh_ig_write_cache($cacheFile, $handle, $data);
+        return $data + ['source' => 'live'];
     }
 
-    return hh_instagram_fallback();
+    // 4. Instagram unreachable — serve the stale copy, but retry in 15 minutes
+    //    instead of hammering the endpoint on every page view.
+    if (is_array($cache) && ($cache['handle'] ?? '') === $handle && (int) ($cache['v'] ?? 0) === 3) {
+        $cache['ts'] = time() - $ttl + 900;
+        @file_put_contents($cacheFile, json_encode($cache, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX);
+
+        return $cache['data'] + ['source' => 'stale'];
+    }
+
+    // 5. Never fetched successfully — curated tiles.
+    return [
+        'handle'    => $handle,
+        'followers' => 0,
+        'posts'     => 0,
+        'items'     => hh_instagram_fallback(),
+        'source'    => 'fallback',
+    ];
+}
+
+function hh_ig_write_cache(string $file, string $handle, array $data): void
+{
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+
+    @file_put_contents(
+        $file,
+        json_encode(['handle' => $handle, 'v' => 3, 'ts' => time(), 'data' => $data], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        LOCK_EX
+    );
 }
 
 /**
- * Call the Graph API and normalise the response.
+ * Public profile endpoint — the no-setup path.
+ *
+ * @return array{handle:string,followers:int,posts:int,items:array}|null
  */
-function hh_instagram_fetch_live(string $token, array $cfg): array
+function hh_ig_fetch_public(string $handle, array $cfg): ?array
 {
-    $fields = 'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp';
+    if (!function_exists('curl_init')) {
+        return null;
+    }
 
-    // Over-fetch so that filtering to reels still fills the grid.
+    $ch = curl_init(HH_IG_PROFILE_API . rawurlencode($handle));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        CURLOPT_HTTPHEADER     => [
+            'x-ig-app-id: ' . HH_IG_WEB_APP_ID,
+            'Accept: */*',
+            'Accept-Language: en-US,en;q=0.9',
+        ],
+    ]);
+    $body = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code !== 200 || !is_string($body) || $body === '') {
+        error_log('[HealHealth] Instagram public endpoint returned HTTP ' . $code);
+        return null;
+    }
+
+    $json = json_decode($body, true);
+    $user = $json['data']['user'] ?? null;
+    if (!is_array($user)) {
+        return null;
+    }
+
+    $media = [];
+    foreach ((array) ($user['edge_owner_to_timeline_media']['edges'] ?? []) as $edge) {
+        $n = $edge['node'] ?? [];
+        if (empty($n['shortcode'])) {
+            continue;
+        }
+
+        $isVideo = !empty($n['is_video']);
+
+        $caption = '';
+        foreach ((array) ($n['edge_media_to_caption']['edges'] ?? []) as $c) {
+            $caption = (string) ($c['node']['text'] ?? '');
+            break;
+        }
+
+        $media[] = [
+            'id'        => (string) $n['shortcode'],
+            'type'      => $isVideo ? 'REEL' : (!empty($n['edge_sidecar_to_children']) ? 'CAROUSEL_ALBUM' : 'IMAGE'),
+            'permalink' => 'https://www.instagram.com/' . ($isVideo ? 'reel' : 'p') . '/' . $n['shortcode'] . '/',
+            'remote'    => (string) ($n['thumbnail_src'] ?? $n['display_url'] ?? ''),
+            'caption'   => hh_ig_clean_caption($caption),
+            'views'     => (int) ($n['video_view_count'] ?? $n['video_play_count'] ?? 0),
+            'likes'     => (int) ($n['edge_liked_by']['count'] ?? $n['edge_media_preview_like']['count'] ?? 0),
+            'comments'  => (int) ($n['edge_media_to_comment']['count'] ?? 0),
+            'taken'     => (int) ($n['taken_at_timestamp'] ?? 0),
+        ];
+    }
+
+    if ($media === []) {
+        return null;
+    }
+
+    return [
+        'handle'    => $handle,
+        'followers' => (int) ($user['edge_followed_by']['count'] ?? 0),
+        'posts'     => (int) ($user['edge_owner_to_timeline_media']['count'] ?? 0),
+        'items'     => hh_ig_shape($media, $cfg),
+    ];
+}
+
+/**
+ * Official Graph API — used only when the public endpoint is blocked
+ * and the account has been connected through /setup-instagram.php.
+ */
+function hh_ig_fetch_graph(string $token, array $cfg): ?array
+{
+    $fields = 'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count';
+
     $res = hh_ig_get_json(HH_IG_GRAPH . '/me/media?' . http_build_query([
         'fields'       => $fields,
         'limit'        => max(25, $cfg['limit'] * 4),
         'access_token' => $token,
     ]));
 
-    // media_product_type is unavailable on some account types — retry without it.
-    if (!$res['ok'] && str_contains(strtolower($res['error']), 'media_product_type')) {
-        $res = hh_ig_get_json(HH_IG_GRAPH . '/me/media?' . http_build_query([
-            'fields'       => 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp',
-            'limit'        => max(25, $cfg['limit'] * 4),
-            'access_token' => $token,
-        ]));
-    }
-
     if (!$res['ok']) {
-        error_log('[HealHealth] Instagram media fetch failed: ' . $res['error']);
-        return [];
+        error_log('[HealHealth] Instagram Graph fetch failed: ' . $res['error']);
+        return null;
     }
 
-    $items = $res['data']['data'] ?? [];
-    if (!is_array($items) || $items === []) {
-        return [];
-    }
+    $media = [];
+    foreach ((array) ($res['data']['data'] ?? []) as $item) {
+        $isVideo = ($item['media_type'] ?? '') === 'VIDEO';
+        $isReel  = ($item['media_product_type'] ?? '') === 'REELS' || $isVideo;
 
-    $isReel = static function (array $item): bool {
-        if (($item['media_product_type'] ?? '') === 'REELS') {
-            return true;
+        // Derive the shortcode from the permalink so filenames match the public path.
+        $slug = '';
+        if (preg_match('#/(?:reel|p|tv)/([A-Za-z0-9_-]+)#', (string) ($item['permalink'] ?? ''), $m)) {
+            $slug = $m[1];
         }
-        // Fallback for accounts that do not return media_product_type.
-        return ($item['media_type'] ?? '') === 'VIDEO';
-    };
 
-    // Reels only, or reels first then everything else.
-    if (!empty($cfg['reels_only'])) {
-        $items = array_values(array_filter($items, $isReel));
-    } elseif (!empty($cfg['reels_first'])) {
-        $reels = array_values(array_filter($items, $isReel));
-        $rest  = array_values(array_filter($items, static fn($i) => !$isReel($i)));
-        $items = array_merge($reels, $rest);
-    }
-
-    $posts = [];
-    foreach ($items as $item) {
-        $remote = ($item['media_type'] ?? '') === 'VIDEO'
-            ? (string) ($item['thumbnail_url'] ?? '')
-            : (string) ($item['media_url'] ?? '');
-
-        // Instagram CDN URLs are signed and expire — keep our own copy.
-        $local = $remote !== ''
-            ? hh_ig_cache_image($remote, (string) ($item['id'] ?? ''))
-            : '';
-
-        $posts[] = [
-            'type'      => $isReel($item) ? 'REEL' : (string) ($item['media_type'] ?? 'IMAGE'),
+        $media[] = [
+            'id'        => $slug !== '' ? $slug : (string) ($item['id'] ?? ''),
+            'type'      => $isReel ? 'REEL' : (string) ($item['media_type'] ?? 'IMAGE'),
             'permalink' => (string) ($item['permalink'] ?? HH_INSTAGRAM),
-            'image'     => $local !== '' ? $local : $remote,
-            'caption'   => mb_substr(trim((string) ($item['caption'] ?? '')), 0, 180),
-            'topic'     => '',
-            'timestamp' => (string) ($item['timestamp'] ?? ''),
+            'remote'    => $isVideo ? (string) ($item['thumbnail_url'] ?? '') : (string) ($item['media_url'] ?? ''),
+            'caption'   => hh_ig_clean_caption((string) ($item['caption'] ?? '')),
+            'views'     => 0,   // needs the Insights permission
+            'likes'     => (int) ($item['like_count'] ?? 0),
+            'comments'  => (int) ($item['comments_count'] ?? 0),
+            'taken'     => strtotime((string) ($item['timestamp'] ?? '')) ?: 0,
         ];
-
-        if (count($posts) >= $cfg['limit']) {
-            break;
-        }
     }
 
-    return $posts;
+    if ($media === []) {
+        return null;
+    }
+
+    return [
+        'handle'    => HH_IG_HANDLE,
+        'followers' => 0,
+        'posts'     => count($media),
+        'items'     => hh_ig_shape($media, $cfg),
+    ];
+}
+
+/**
+ * Filter to reels, sort newest first, trim to the limit, mirror thumbnails.
+ */
+function hh_ig_shape(array $media, array $cfg): array
+{
+    $isReel = static fn(array $m): bool => $m['type'] === 'REEL';
+
+    if (!empty($cfg['reels_only'])) {
+        $media = array_values(array_filter($media, $isReel));
+    } elseif (!empty($cfg['reels_first'])) {
+        $reels = array_values(array_filter($media, $isReel));
+        $rest  = array_values(array_filter($media, static fn($m) => !$isReel($m)));
+        usort($reels, static fn($a, $b) => $b['taken'] <=> $a['taken']);
+        usort($rest,  static fn($a, $b) => $b['taken'] <=> $a['taken']);
+        $media = array_merge($reels, $rest);
+    } else {
+        usort($media, static fn($a, $b) => $b['taken'] <=> $a['taken']);
+    }
+
+    if (!empty($cfg['reels_only'])) {
+        usort($media, static fn($a, $b) => $b['taken'] <=> $a['taken']);
+    }
+
+    $media = array_slice($media, 0, max(1, (int) $cfg['limit']));
+
+    foreach ($media as &$m) {
+        $local = $m['remote'] !== '' ? hh_ig_cache_image($m['remote'], $m['id']) : '';
+        $m['image'] = $local !== '' ? $local : '';
+        unset($m['remote']);
+    }
+    unset($m);
+
+    // Drop thumbnails for posts that have left the feed.
+    hh_ig_prune_images($media);
+
+    return $media;
+}
+
+/**
+ * Hashtag and @mention soup makes a poor caption on a clinical site.
+ */
+function hh_ig_clean_caption(string $caption): string
+{
+    $clean = preg_replace(['/[#@][\w.]+/u', '/\s+/u'], ['', ' '], trim($caption)) ?? '';
+
+    return mb_substr(trim($clean), 0, 150);
+}
+
+/**
+ * 2100 -> "2.1K". Instagram-style short counts.
+ */
+function hh_ig_short_num(int $n): string
+{
+    if ($n >= 1000000) {
+        return rtrim(rtrim(number_format($n / 1000000, 1), '0'), '.') . 'M';
+    }
+    if ($n >= 1000) {
+        return rtrim(rtrim(number_format($n / 1000, 1), '0'), '.') . 'K';
+    }
+
+    return (string) $n;
 }
 
 /**
  * Mirror a thumbnail into assets/img/ig/ and return its web path.
- * Returns '' if the download fails, so the caller can hotlink as a last resort.
  */
 function hh_ig_cache_image(string $url, string $mediaId): string
 {
-    if ($mediaId === '') {
+    $slug = preg_replace('/[^A-Za-z0-9_-]/', '', $mediaId) ?? '';
+    if ($slug === '') {
         return '';
     }
 
@@ -409,39 +561,44 @@ function hh_ig_cache_image(string $url, string $mediaId): string
         return '';
     }
 
-    $name = preg_replace('/[^A-Za-z0-9_-]/', '', $mediaId) . '.jpg';
-    $path = $dir . '/' . $name;
-    $web  = 'assets/img/ig/' . $name;
+    $path = $dir . '/' . $slug . '.jpg';
+    $web  = 'assets/img/ig/' . $slug . '.jpg';
 
-    // Already mirrored and still recent enough.
-    if (is_file($path) && filesize($path) > 0 && (time() - (int) filemtime($path)) < 30 * 86400) {
-        return $web;
+    if (is_file($path) && filesize($path) > 1000) {
+        return $web . '?v=' . filemtime($path);
     }
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 15,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 4,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_USERAGENT      => 'HealHealthHomeopathy/1.0',
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
     ]);
-    $bytes  = curl_exec($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    $ctype  = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    $bytes = curl_exec($ch);
+    $code  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($status !== 200 || !is_string($bytes) || $bytes === '' || !str_starts_with($ctype, 'image/')) {
+    // Verify it really is an image before writing it.
+    if ($code !== 200 || !is_string($bytes) || strlen($bytes) < 1000) {
+        return '';
+    }
+    if (function_exists('imagecreatefromstring') && @imagecreatefromstring($bytes) === false) {
         return '';
     }
 
-    return @file_put_contents($path, $bytes, LOCK_EX) !== false ? $web : '';
+    if (@file_put_contents($path, $bytes, LOCK_EX) === false) {
+        return '';
+    }
+
+    return $web . '?v=' . filemtime($path);
 }
 
 /**
  * Delete mirrored thumbnails that are no longer in the feed.
  */
-function hh_ig_prune_images(array $posts): void
+function hh_ig_prune_images(array $items): void
 {
     $dir = dirname(__DIR__) . '/assets/img/ig';
     if (!is_dir($dir)) {
@@ -449,14 +606,19 @@ function hh_ig_prune_images(array $posts): void
     }
 
     $keep = [];
-    foreach ($posts as $post) {
-        if (str_starts_with((string) $post['image'], 'assets/img/ig/')) {
-            $keep[basename($post['image'])] = true;
+    foreach ($items as $item) {
+        $slug = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? '')) ?? '';
+        if ($slug !== '') {
+            $keep[$slug . '.jpg'] = true;
         }
     }
 
+    if ($keep === []) {
+        return;
+    }
+
     foreach (glob($dir . '/*.jpg') ?: [] as $file) {
-        if (!isset($keep[basename($file)]) && (time() - (int) filemtime($file)) > 7 * 86400) {
+        if (!isset($keep[basename($file)])) {
             @unlink($file);
         }
     }
@@ -464,43 +626,42 @@ function hh_ig_prune_images(array $posts): void
 
 function hh_instagram_fallback(): array
 {
-    $posts = [];
-    foreach (HH_IG_FALLBACK as $tile) {
-        $posts[] = [
+    $items = [];
+    foreach (HH_IG_FALLBACK as $i => $tile) {
+        $items[] = [
+            'id'        => 'fallback-' . $i,
             'type'      => 'FALLBACK',
             'permalink' => HH_INSTAGRAM,
             'image'     => '',
             'caption'   => $tile['caption'],
             'topic'     => $tile['topic'],
-            'timestamp' => '',
+            'views'     => 0,
+            'likes'     => 0,
+            'comments'  => 0,
+            'taken'     => 0,
         ];
     }
 
-    return $posts;
+    return $items;
 }
 
 /**
- * Humanise an ISO timestamp for display.
+ * "1w ago", "3 days ago", ...
  */
-function hh_instagram_when(string $timestamp): string
+function hh_instagram_when(int $taken): string
 {
-    if ($timestamp === '') {
+    if ($taken <= 0) {
         return '';
     }
 
-    try {
-        $then = new DateTimeImmutable($timestamp);
-    } catch (Exception) {
-        return '';
-    }
-
-    $days = (int) $then->diff(new DateTimeImmutable('now'))->days;
+    $secs = time() - $taken;
 
     return match (true) {
-        $days <= 0  => 'Today',
-        $days === 1 => 'Yesterday',
-        $days < 7   => $days . ' days ago',
-        $days < 30  => (int) round($days / 7) . ' weeks ago',
-        default     => $then->format('d M Y'),
+        $secs < 3600    => 'Just now',
+        $secs < 86400   => (int) floor($secs / 3600) . 'h ago',
+        $secs < 172800  => 'Yesterday',
+        $secs < 604800  => (int) floor($secs / 86400) . 'd ago',
+        $secs < 2592000 => (int) floor($secs / 604800) . 'w ago',
+        default         => date('d M Y', $taken),
     };
 }
