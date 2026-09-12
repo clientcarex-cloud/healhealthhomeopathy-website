@@ -1,0 +1,6 @@
+includes/config.local.php
+storage/cache/*
+storage/bookings/*
+!storage/cache/.gitkeep
+!storage/bookings/.gitkeep
+.DS_Store
