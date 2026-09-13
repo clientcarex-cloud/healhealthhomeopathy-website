@@ -101,9 +101,10 @@ if ($authed) {
     // Force a fetch.
     if (($_POST['action'] ?? '') === 'fetch') {
         @unlink($cfg['cache_file']);
+        @unlink($cfg['cache_file'] . '.fail');
         $feed = hh_instagram_feed($cfg);
         if ($feed['source'] === 'fallback') {
-            $notice = ['kind' => 'error', 'title' => 'Still showing placeholders',
+            $notice = ['kind' => 'error', 'title' => 'No posts yet',
                        'text'  => 'Instagram returned no media. Run the connection test below for the exact reason.'];
         } else {
             $reels = count(array_filter($feed['items'], static fn($i) => $i['type'] === 'REEL'));

@@ -119,7 +119,7 @@ and the follower count. Nothing to configure — just deploy.
 |---|---|---|
 | `HH_IG_REELS_ONLY`  | `0` | `1` shows reels only and hides photo posts |
 | `HH_IG_REELS_FIRST` | `1` | reels at the front, then photos |
-| `HH_IG_LIMIT`       | `8` | number of tiles in the grid |
+| `HH_IG_LIMIT`       | `4` | number of tiles in the single row |
 | `HH_IG_CACHE_TTL`   | `3600` | seconds between API calls |
 
 All optional — the defaults work as-is.
@@ -162,20 +162,29 @@ resulting 60-day token then refreshes itself while the site gets traffic.
 > Note: the official API does not expose play counts without the Insights
 > permission, so reels connected this way show likes but not plays.
 
-### Placeholder tiles
+### Before the first successful fetch
 
-Shown only if Instagram has never been reached successfully. Edit them in
-`HH_IG_FALLBACK` at the top of `includes/instagram.php`.
+No made-up posts are shown. Until Instagram has been reached once, the section
+shows a single "Follow on Instagram" card linking to the profile, and the
+server waits 15 minutes between attempts so page loads stay fast.
 
-## 5. Add real photos
+## 5. Photos
 
-Two images are picked up automatically if present — the page falls back to a
-designed placeholder panel when they are missing:
+Doctor photos live in `assets/img/doctor/`. The site serves the `.webp` copies;
+the `.png` files are the originals.
 
-| File | Used for | Suggested size |
-|------|----------|----------------|
-| `assets/img/dr-atiya.jpg` | Hero portrait | 640 × 740, portrait |
-| `assets/img/clinic.jpg`   | About section | 560 × 640, portrait |
+| File | Used for |
+|------|----------|
+| `dr-atiya-cutout-magenta` | Hero portrait (background removed) |
+| `dr-atiya-desk` | About section |
+| `dr-atiya-avatar-mustard` | Instagram profile avatar |
+| `dr-atiya-avatar-pink` | Doctor card in the booking section |
+| `dr-atiya-cutout-mustard` | FAQ side card (background removed) |
+| `dr-atiya-consultation` | Closing call-to-action band |
+| `dr-atiya-portrait-mustard.jpg` | Social share image (`og:image`) |
+
+To replace one, keep the file name and regenerate the WebP, e.g.
+`cwebp -q 84 dr-atiya-desk.png -o dr-atiya-desk.webp`.
 
 ---
 

@@ -32,18 +32,8 @@ const HH_IG_SCOPES       = 'instagram_business_basic';
 /** Refresh the long-lived token when fewer than this many days remain. */
 const HH_IG_REFRESH_WINDOW_DAYS = 10;
 
-/**
- * Curated tiles — only ever shown if the account has never been connected,
- * or the API is down and there is no cache at all.
- */
-const HH_IG_FALLBACK = [
-    ['topic' => 'Case notes', 'caption' => 'How constitutional homeopathy approaches ADHD in children — a walk-through of one case.'],
-    ['topic' => 'Skin',       'caption' => 'Psoriasis: why the flare returns, and what deep-acting treatment changes.'],
-    ['topic' => 'Fertility',  'caption' => 'PCOS and cycle regulation — the three things I check before writing a prescription.'],
-    ['topic' => 'Thyroid',    'caption' => 'Reading your thyroid report: TSH alone is not the whole story.'],
-    ['topic' => 'Gut health', 'caption' => 'Acidity every evening? Here is what your gut is actually telling you.'],
-    ['topic' => 'Clinic',     'caption' => 'Consultations now open at MPM Mall, Abids — and online for patients abroad.'],
-];
+/** After a failed fetch with no cache, wait this long before trying again. */
+const HH_IG_RETRY_SECS = 900;
 
 // ---------------------------------------------------------------------------
 // Token storage
@@ -299,11 +289,16 @@ function hh_instagram_feed(array $cfg): array
         return $cache['data'] + ['source' => 'cache'];
     }
 
+    // A recent failure with nothing cached: don't block the page on another attempt.
+    $failFile    = $cacheFile . '.fail';
+    $coolingDown = !is_array($cache) && is_file($failFile)
+        && (time() - (int) filemtime($failFile)) < HH_IG_RETRY_SECS;
+
     // 2. Public endpoint — no credentials needed.
-    $data = hh_ig_fetch_public($handle, $cfg);
+    $data = $coolingDown ? null : hh_ig_fetch_public($handle, $cfg);
 
     // 3. Official API, if the account was connected via /setup-instagram.php.
-    if ($data === null) {
+    if ($data === null && !$coolingDown) {
         $token = hh_ig_access_token($cfg);
         if ($token !== '') {
             hh_ig_maybe_refresh();
@@ -313,6 +308,7 @@ function hh_instagram_feed(array $cfg): array
 
     if ($data !== null) {
         hh_ig_write_cache($cacheFile, $handle, $data);
+        @unlink($failFile);
         return $data + ['source' => 'live'];
     }
 
@@ -325,12 +321,16 @@ function hh_instagram_feed(array $cfg): array
         return $cache['data'] + ['source' => 'stale'];
     }
 
-    // 5. Never fetched successfully — curated tiles.
+    // 5. Never fetched successfully — no posts; the page links to the profile instead.
+    if (!$coolingDown) {
+        @touch($failFile);
+    }
+
     return [
         'handle'    => $handle,
         'followers' => 0,
         'posts'     => 0,
-        'items'     => hh_instagram_fallback(),
+        'items'     => [],
         'source'    => 'fallback',
     ];
 }
@@ -622,27 +622,6 @@ function hh_ig_prune_images(array $items): void
             @unlink($file);
         }
     }
-}
-
-function hh_instagram_fallback(): array
-{
-    $items = [];
-    foreach (HH_IG_FALLBACK as $i => $tile) {
-        $items[] = [
-            'id'        => 'fallback-' . $i,
-            'type'      => 'FALLBACK',
-            'permalink' => HH_INSTAGRAM,
-            'image'     => '',
-            'caption'   => $tile['caption'],
-            'topic'     => $tile['topic'],
-            'views'     => 0,
-            'likes'     => 0,
-            'comments'  => 0,
-            'taken'     => 0,
-        ];
-    }
-
-    return $items;
 }
 
 /**

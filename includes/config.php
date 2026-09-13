@@ -48,7 +48,7 @@ const HH_TAGLINE      = 'Gentle homeopathic care, rooted in 20 years of clinical
 const HH_PHONE_RAW    = '7032258110';
 const HH_PHONE_E164   = '+917032258110';
 const HH_PHONE_PRETTY = '+91 70322 58110';
-const HH_EMAIL_PUBLIC = 'digicarelynx@gmail.com';
+const HH_EMAIL_PUBLIC = 'dratiya@healhealthhomeopathy.com';
 
 const HH_ADDRESS_LINE1 = 'Level 4, MPM Mall, Hanuman Tekdi';
 const HH_ADDRESS_LINE2 = 'Abids, Hyderabad, Telangana 500001';
@@ -198,7 +198,7 @@ $HH_INSTAGRAM_CFG = [
     'reels_only'   => hh_setting('HH_IG_REELS_ONLY', '0') === '1',
     'reels_first'  => hh_setting('HH_IG_REELS_FIRST', '1') === '1',
 
-    'limit'        => (int) hh_setting('HH_IG_LIMIT', '8'),
+    'limit'        => (int) hh_setting('HH_IG_LIMIT', '4'),   // one row
     'cache_ttl'    => (int) hh_setting('HH_IG_CACHE_TTL', '3600'), // seconds
     'cache_file'   => dirname(__DIR__) . '/storage/cache/instagram.json',
 ];

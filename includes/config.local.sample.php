@@ -42,7 +42,7 @@ return [
     // Reels behaviour
     'HH_IG_REELS_ONLY'  => '0',  // '1' = show reels only, hide photo posts
     'HH_IG_REELS_FIRST' => '1',  // '1' = reels at the front, then photos
-    'HH_IG_LIMIT'       => '8',  // tiles in the grid
+    'HH_IG_LIMIT'       => '4',  // tiles in the single row
     'HH_IG_CACHE_TTL'   => '3600',
 
     // Alternative to the setup page: paste a long-lived token here.

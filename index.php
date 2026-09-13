@@ -6,7 +6,7 @@ require_once __DIR__ . '/includes/icons.php';
 require_once __DIR__ . '/includes/instagram.php';
 
 $igFeed   = hh_instagram_feed($HH_INSTAGRAM_CFG);
-$igPosts  = $igFeed['items'];
+$igPosts  = array_slice($igFeed['items'], 0, max(1, $HH_INSTAGRAM_CFG['limit']));
 $igIsLive = $igFeed['source'] !== 'fallback';
 
 $pageTitle = HH_BRAND . ' by ' . HH_DOCTOR . ' — Homeopathy Clinic in Abids, Hyderabad';
@@ -83,7 +83,7 @@ $navLinks = [
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/css/style.css?v=3">
+<link rel="stylesheet" href="assets/css/style.css?v=4">
 <noscript><style>.reveal { opacity: 1 !important; transform: none !important; }</style></noscript>
 
 <script type="application/ld+json"><?= json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
@@ -331,6 +331,7 @@ $navLinks = [
           <a href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">@<?= e(HH_IG_HANDLE) ?></a>.
         </p>
       </div>
+      <?php if ($igPosts !== []): ?>
       <a class="ig-handle" href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">
         <span class="ig-handle__avatar">
           <img src="assets/img/doctor/dr-atiya-avatar-mustard.webp" alt="" width="40" height="40" loading="lazy">
@@ -342,8 +343,10 @@ $navLinks = [
           @<?= e(HH_IG_HANDLE) ?>
         <?php endif; ?>
       </a>
+      <?php endif; ?>
     </div>
 
+    <?php if ($igPosts !== []): ?>
     <div class="ig-grid">
       <?php foreach ($igPosts as $post): ?>
         <a class="ig-card reveal" href="<?= e($post['permalink']) ?>" target="_blank" rel="noopener noreferrer">
@@ -385,11 +388,19 @@ $navLinks = [
       <?php endforeach; ?>
     </div>
 
-    <?php if (!$igIsLive): ?>
-      <p class="ig-note">
-        Showing placeholder tiles — Instagram could not be reached from this server yet.
-        <a href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">See the live feed &rarr;</a>
-      </p>
+    <?php else: ?>
+    <!-- Instagram not reachable yet: link to the profile instead of showing made-up posts. -->
+    <a class="ig-follow reveal" href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">
+      <span class="ig-handle__avatar">
+        <img src="assets/img/doctor/dr-atiya-avatar-mustard.webp" alt="" width="72" height="72" loading="lazy">
+        <span class="ig-handle__badge"><?= hh_icon('instagram', 13) ?></span>
+      </span>
+      <span class="ig-follow__text">
+        <strong>@<?= e(HH_IG_HANDLE) ?></strong>
+        <span>Reels, case notes and clinic updates from <?= e(HH_DOCTOR) ?>.</span>
+      </span>
+      <span class="btn btn--primary"><?= hh_icon('instagram', 17) ?> Follow on Instagram</span>
+    </a>
     <?php endif; ?>
   </div>
 </section>
@@ -757,7 +768,7 @@ $navLinks = [
     </div>
 
     <p class="disclaimer">
-      <strong>Medical disclaimer:</strong> The content on this website is for general information only
+      The content on this website is for general information only
       and is not a substitute for an in-person medical consultation, diagnosis or treatment. Never stop
       prescribed medication without speaking to your treating doctor. In a medical emergency, contact
       your nearest hospital immediately.
