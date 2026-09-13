@@ -17,6 +17,7 @@ $schema = [
     '@context' => 'https://schema.org',
     '@type'    => 'MedicalClinic',
     'name'     => HH_BRAND . ' by ' . HH_DOCTOR,
+    'image'    => 'https://healhealthhomeopathy.com/assets/img/doctor/dr-atiya-portrait-mustard.jpg',
     'description' => $pageDesc,
     'telephone'   => HH_PHONE_E164,
     'email'       => HH_EMAIL_PUBLIC,
@@ -43,6 +44,7 @@ $schema = [
     'employee' => [
         '@type'      => 'Physician',
         'name'       => HH_DOCTOR,
+        'image'      => 'https://healhealthhomeopathy.com/assets/img/doctor/dr-atiya-portrait-mustard.jpg',
         'jobTitle'   => 'Homeopathic Physician',
         'medicalSpecialty' => 'Homeopathic',
         'knowsAbout' => array_column(HH_SERVICES, 'title'),
@@ -72,13 +74,16 @@ $navLinks = [
 <meta property="og:title" content="<?= e($pageTitle) ?>">
 <meta property="og:description" content="<?= e($pageDesc) ?>">
 <meta property="og:locale" content="en_IN">
+<meta property="og:image" content="https://healhealthhomeopathy.com/assets/img/doctor/dr-atiya-portrait-mustard.jpg">
+<meta property="og:image:alt" content="<?= e(HH_DOCTOR) ?>, homeopathic physician at Heal Health Homeopathy">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://healhealthhomeopathy.com/assets/img/doctor/dr-atiya-portrait-mustard.jpg">
 
 <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="assets/css/style.css?v=1">
+<link rel="stylesheet" href="assets/css/style.css?v=3">
 <noscript><style>.reveal { opacity: 1 !important; transform: none !important; }</style></noscript>
 
 <script type="application/ld+json"><?= json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
@@ -162,15 +167,8 @@ $navLinks = [
 
     <div class="hero__visual">
       <div class="portrait">
-        <?php if (is_file(__DIR__ . '/assets/img/dr-atiya.jpg')): ?>
-          <img src="assets/img/dr-atiya.jpg" alt="<?= e(HH_DOCTOR) ?>, homeopathic physician" width="640" height="740">
-        <?php else: ?>
-          <div class="portrait__fallback">
-            <?= hh_icon('stethoscope', 96) ?>
-            <strong><?= e(HH_DOCTOR) ?></strong>
-            <span>Add a photo at <code>assets/img/dr-atiya.jpg</code> to replace this panel.</span>
-          </div>
-        <?php endif; ?>
+        <img src="assets/img/doctor/dr-atiya-cutout-magenta.webp" alt="<?= e(HH_DOCTOR) ?>, homeopathic physician"
+             width="409" height="610" fetchpriority="high">
 
         <div class="portrait__caption">
           <strong><?= e(HH_DOCTOR) ?></strong>
@@ -242,15 +240,8 @@ $navLinks = [
   <div class="container about__grid">
     <div class="about__media reveal">
       <div class="about__frame">
-        <?php if (is_file(__DIR__ . '/assets/img/clinic.jpg')): ?>
-          <img src="assets/img/clinic.jpg" alt="Heal Health Homeopathy clinic, Abids, Hyderabad" width="560" height="640">
-        <?php else: ?>
-          <div style="color:var(--green-700);text-align:center;">
-            <?= hh_icon('leaf', 72) ?>
-            <p style="margin-top:16px;font-family:var(--font-display);font-size:20px;">Heal Health Homeopathy</p>
-            <p style="font-size:13.5px;color:var(--ink-500);margin:0;">Add <code>assets/img/clinic.jpg</code></p>
-          </div>
-        <?php endif; ?>
+        <img src="assets/img/doctor/dr-atiya-desk.webp" alt="<?= e(HH_DOCTOR) ?> at the consultation desk in the clinic"
+             width="408" height="556" loading="lazy">
       </div>
       <div class="about__seal">
         <strong>DHA-licensed</strong>
@@ -341,7 +332,10 @@ $navLinks = [
         </p>
       </div>
       <a class="ig-handle" href="<?= e(HH_INSTAGRAM) ?>" target="_blank" rel="noopener noreferrer">
-        <span class="ig-handle__badge"><?= hh_icon('instagram', 18) ?></span>
+        <span class="ig-handle__avatar">
+          <img src="assets/img/doctor/dr-atiya-avatar-mustard.webp" alt="" width="40" height="40" loading="lazy">
+          <span class="ig-handle__badge"><?= hh_icon('instagram', 11) ?></span>
+        </span>
         <?php if ($igFeed['followers'] > 0): ?>
           Follow · <?= e(hh_ig_short_num($igFeed['followers'])) ?> followers
         <?php else: ?>
@@ -518,6 +512,16 @@ $navLinks = [
 
       <!-- Aside -->
       <aside class="booking-aside">
+        <div class="info-card doc-card">
+          <img class="doc-card__img" src="assets/img/doctor/dr-atiya-avatar-pink.webp" alt="<?= e(HH_DOCTOR) ?>"
+               width="76" height="76" loading="lazy">
+          <div>
+            <strong><?= e(HH_DOCTOR) ?></strong>
+            <span>BHMS · 20+ years in practice</span>
+            <p>Your consultation is with Dr. Atiya directly — in clinic or online.</p>
+          </div>
+        </div>
+
         <div class="info-card info-card--dark">
           <h3>Prefer to talk?</h3>
           <div class="info-row">
@@ -629,6 +633,7 @@ $navLinks = [
       <h2>Before you book</h2>
     </div>
 
+    <div class="faq-wrap">
     <div class="faq">
       <?php
       $faqs = [
@@ -652,6 +657,21 @@ $navLinks = [
         </details>
       <?php endforeach; ?>
     </div>
+
+    <aside class="faq-doc reveal">
+      <div class="faq-doc__media">
+        <img src="assets/img/doctor/dr-atiya-cutout-mustard.webp" alt="<?= e(HH_DOCTOR) ?>"
+             width="440" height="567" loading="lazy">
+      </div>
+      <div class="faq-doc__body">
+        <strong>Still have a question?</strong>
+        <p>Message the clinic on WhatsApp and we will answer before you book.</p>
+        <a class="btn btn--primary btn--block" href="<?= e(HH_WHATSAPP) ?>" target="_blank" rel="noopener noreferrer">
+          <?= hh_icon('whatsapp', 17) ?> Ask on WhatsApp
+        </a>
+      </div>
+    </aside>
+    </div>
   </div>
 </section>
 
@@ -659,14 +679,20 @@ $navLinks = [
 <section class="section section--cream" style="padding-top:0;">
   <div class="container">
     <div class="cta-band reveal">
-      <h2>Start with one honest conversation</h2>
-      <p>
-        Twenty years of practice, 5,000+ patients, 20+ countries — and every case still begins
-        with listening. Book a consultation with Dr. Atiya Fatima today.
-      </p>
-      <div class="cta-band__actions">
-        <a class="btn btn--gold btn--lg" href="#book"><?= hh_icon('calendar', 18) ?> Book appointment</a>
-        <a class="btn btn--light btn--lg" href="tel:<?= e(HH_PHONE_E164) ?>"><?= hh_icon('phone', 18) ?> <?= e(HH_PHONE_PRETTY) ?></a>
+      <div class="cta-band__copy">
+        <h2>Start with one honest conversation</h2>
+        <p>
+          Twenty years of practice, 5,000+ patients, 20+ countries — and every case still begins
+          with listening. Book a consultation with Dr. Atiya Fatima today.
+        </p>
+        <div class="cta-band__actions">
+          <a class="btn btn--gold btn--lg" href="#book"><?= hh_icon('calendar', 18) ?> Book appointment</a>
+          <a class="btn btn--light btn--lg" href="tel:<?= e(HH_PHONE_E164) ?>"><?= hh_icon('phone', 18) ?> <?= e(HH_PHONE_PRETTY) ?></a>
+        </div>
+      </div>
+      <div class="cta-band__media">
+        <img src="assets/img/doctor/dr-atiya-consultation.webp" alt="<?= e(HH_DOCTOR) ?> in consultation with a patient at the clinic"
+             width="507" height="556" loading="lazy">
       </div>
     </div>
   </div>
@@ -740,6 +766,7 @@ $navLinks = [
     <div class="footer__bottom">
       <p>&copy; <?= date('Y') ?> Heal Health Homeopathy. All rights reserved.</p>
       <p>Dr. Atiya Fatima, BHMS · DHA-licensed, Dubai</p>
+      <p class="footer__credit">Developed by <a href="https://clientcarex.com/" target="_blank" rel="noopener">ClientCareX</a></p>
     </div>
   </div>
 </footer>
